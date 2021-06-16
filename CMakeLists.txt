@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.12)
-project(template)
+project(list)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -35,5 +35,12 @@ elseif (NOT MSVC)
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fsanitize=undefined,address,leak -fno-sanitize-recover=all -D_GLIBCXX_DEBUG")
 endif()
 
-add_executable(tests tests.cpp)
+set(TESTS_HELPERS
+        tests-helpers/element.h
+        tests-helpers/element.cpp
+        tests-helpers/fault-injection.h
+        tests-helpers/fault-injection.cpp)
+
+add_executable(tests tests.cpp list.h ${TESTS_HELPERS})
+
 target_link_libraries(tests gtest_main)
