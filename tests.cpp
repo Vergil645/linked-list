@@ -2,8 +2,8 @@
 
 #include "list.h"
 
-#include "test-helpers/element.h"
-#include "test-helpers/fault-injection.h"
+#include "tests-helpers/element.h"
+#include "tests-helpers/fault-injection.h"
 
 using container = list<element>;
 
