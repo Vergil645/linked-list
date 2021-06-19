@@ -4,45 +4,20 @@
 
 template <typename T>
 class list {
-public:
-  struct iterator;
-  struct const_iterator;
-
 private:
-  template <typename VALUE_TYPE, typename ITERATOR>
+  template <typename VALUE_TYPE>
   struct list_iterator;
 
   struct node;
   struct data_node;
 
-  node* begin_;
   node end_;
 
 public:
   // bidirectional iterator
-  struct iterator : list_iterator<T, iterator> {
-  private:
-    explicit iterator(node* ptr) {
-      list_iterator<T, iterator>::ptr_ = ptr;
-    }
-
-    friend list;
-  };
-
+  using iterator = list_iterator<T>;
   // bidirectional iterator
-  struct const_iterator : list_iterator<T const, const_iterator> {
-    const_iterator(iterator const& other)
-        : list_iterator<const T, const_iterator>() {
-      list_iterator<T const, const_iterator>::ptr_ = other.ptr_;
-    }
-
-  private:
-    explicit const_iterator(node* ptr) {
-      list_iterator<const T, const_iterator>::ptr_ = ptr;
-    }
-
-    friend list;
-  };
+  using const_iterator = list_iterator<T const>;
 
   using reverse_iterator = std::reverse_iterator<iterator>;
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
@@ -120,16 +95,15 @@ public:
   }
 
 private:
-  node* copy_node(node* right, node* orig);
-  node* get_begin();
+  node* copy_node(node* right, node* orig, node const* end);
 
   void swap(list& other);
 
   static void destruct_list(node* cur);
 
-  template <typename VALUE_TYPE, typename ITERATOR>
+  template <typename VALUE_TYPE>
   struct list_iterator {
-  protected:
+  private:
     node* ptr_{nullptr};
 
   public:
@@ -141,6 +115,8 @@ private:
 
     list_iterator() = default;
 
+    list_iterator(iterator const& other) : ptr_(other.ptr_) {}
+
     reference operator*() const {
       return ptr_->value();
     }
@@ -148,43 +124,40 @@ private:
       return &ptr_->value();
     }
 
-    ITERATOR& operator++() & {
-      ptr_ = ptr_->right();
-      return static_cast<ITERATOR&>(*this);
+    list_iterator& operator++() & {
+      ptr_ = ptr_->right_;
+      return *this;
     }
 
-    ITERATOR operator++(int) & {
-      ITERATOR old = static_cast<ITERATOR&>(*this);
+    list_iterator operator++(int) & {
+      list_iterator old = *this;
       ++(*this);
       return old;
     }
 
-    ITERATOR& operator--() & {
+    list_iterator& operator--() & {
       ptr_ = ptr_->left_;
-      return static_cast<ITERATOR&>(*this);
+      return *this;
     }
 
-    ITERATOR operator--(int) & {
-      ITERATOR old = static_cast<ITERATOR&>(*this);
+    list_iterator operator--(int) & {
+      list_iterator old = *this;
       --(*this);
       return old;
-    }
-
-    bool operator==(const_iterator const& other) {
-      return ptr_ == other.ptr_;
     }
 
     bool operator==(const_iterator const& other) const {
       return ptr_ == other.ptr_;
     }
 
-    bool operator!=(const_iterator const& other) {
-      return ptr_ != other.ptr_;
-    }
-
     bool operator!=(const_iterator const& other) const {
       return ptr_ != other.ptr_;
     }
+
+  private:
+    explicit list_iterator(node* ptr) : ptr_(ptr) {}
+
+    friend list;
   };
 };
 
@@ -193,58 +166,62 @@ struct list<T>::node {
   node() = default;
 
   T& value();
-  node*& right();
 
 private:
   node* left_{nullptr};
+  node* right_{nullptr};
 
   friend list;
 };
 
 template <typename T>
 struct list<T>::data_node : node {
-  data_node(T const& value, node* right);
+  data_node(T const& value, node* left, node* right);
 
 private:
   T value_;
-  node* right_;
 
   friend node;
 };
 
 template <typename T>
-list<T>::list() noexcept : end_(), begin_(&end_) {}
+list<T>::list() noexcept : end_() {
+  end_.left_ = &end_;
+  end_.right_ = &end_;
+}
 
 template <typename T>
 list<T>::list(const list<T>& other) : list() {
-  end_.left_ = copy_node(&end_, other.end_.left_);
-  begin_ = get_begin();
+  end_.left_ = copy_node(&end_, other.end_.left_, &other.end_);
 }
 
 template <typename T>
 list<T>& list<T>::operator=(list const& other) {
-  list(other).swap(*this);
+  if (this != &other) {
+    list(other).swap(*this);
+  }
   return *this;
 }
 
 template <typename T>
 list<T>::~list() {
+  end_.right_->left_ = nullptr;
   destruct_list(end_.left_);
 }
 
 template <typename T>
 bool list<T>::empty() const noexcept {
-  return end_.left_ == nullptr;
+  return end_.left_ == &end_;
 }
 
 template <typename T>
 T& list<T>::front() noexcept {
-  return begin_->value();
+  return end_.right_->value();
 }
 
 template <typename T>
 T const& list<T>::front() const noexcept {
-  return begin_->value();
+  return end_.right_->value();
 }
 
 template <typename T>
@@ -279,12 +256,12 @@ void list<T>::pop_back() noexcept {
 
 template <typename T>
 typename list<T>::iterator list<T>::begin() noexcept {
-  return iterator(begin_);
+  return iterator(end_.right_);
 }
 
 template <typename T>
 typename list<T>::const_iterator list<T>::begin() const noexcept {
-  return const_iterator(begin_);
+  return const_iterator(end_.right_);
 }
 
 template <typename T>
@@ -319,21 +296,17 @@ typename list<T>::const_reverse_iterator list<T>::rend() const noexcept {
 
 template <typename T>
 void list<T>::clear() noexcept {
+  end_.right_->left_ = nullptr;
   destruct_list(end_.left_);
-  end_.left_ = nullptr;
-  begin_ = &end_;
+  end_.left_ = &end_;
+  end_.right_ = &end_;
 }
 
 template <typename T>
 typename list<T>::iterator list<T>::insert(const_iterator pos, T const& val) {
   node* cur = pos.ptr_;
-  node* new_node = new data_node(val, cur);
-  new_node->left_ = cur->left_;
-  if (cur->left_) {
-    cur->left_->right() = new_node;
-  } else {
-    begin_ = new_node;
-  }
+  node* new_node = new data_node(val, cur->left_, cur);
+  cur->left_->right_ = new_node;
   cur->left_ = new_node;
   return iterator(new_node);
 }
@@ -350,14 +323,11 @@ typename list<T>::iterator list<T>::erase(const_iterator first,
     node* cur1 = first.ptr_;
     node* cur2 = last.ptr_->left_;
 
-    cur2->right()->left_ = cur1->left_;
-    if (cur1->left_) {
-      cur1->left_->right() = cur2->right();
-    } else {
-      begin_ = cur2->right();
-    }
+    cur2->right_->left_ = cur1->left_;
+    cur1->left_->right_ = cur2->right_;
     cur1->left_ = nullptr;
-    cur2->right() = nullptr;
+    cur2->right_ = nullptr;
+
     destruct_list(cur2);
   }
   return iterator(last.ptr_);
@@ -373,30 +343,26 @@ void list<T>::splice(const_iterator pos, list<T>& other, const_iterator first,
   node* cur2 = last.ptr_->left_;
   node* cur_pos = pos.ptr_;
 
-  cur2->right()->left_ = cur1->left_;
-  if (cur1->left_) {
-    cur1->left_->right() = cur2->right();
-  } else {
-    other.begin_ = cur2->right();
-  }
-  cur2->right() = cur_pos;
+  cur2->right_->left_ = cur1->left_;
+  cur1->left_->right_ = cur2->right_;
+
+  cur2->right_ = cur_pos;
   cur1->left_ = cur_pos->left_;
-  if (cur_pos->left_) {
-    cur_pos->left_->right() = cur1;
-  } else {
-    begin_ = cur1;
-  }
+
+  cur_pos->left_->right_ = cur1;
   cur_pos->left_ = cur2;
 }
 
 template <typename T>
-typename list<T>::node* list<T>::copy_node(node* right, node* orig) {
-  if (!orig) {
-    return nullptr;
+typename list<T>::node* list<T>::copy_node(node* right, node* orig,
+                                           node const* end) {
+  if (orig == end) {
+    end_.right_ = right;
+    return &end_;
   }
-  node* res = new data_node(orig->value(), right);
+  node* res = new data_node(orig->value(), nullptr, right);
   try {
-    res->left_ = copy_node(res, orig->left_);
+    res->left_ = copy_node(res, orig->left_, end);
     return res;
   } catch (...) {
     delete static_cast<data_node*>(res);
@@ -405,26 +371,22 @@ typename list<T>::node* list<T>::copy_node(node* right, node* orig) {
 }
 
 template <typename T>
-typename list<T>::node* list<T>::get_begin() {
-  node* res = &end_;
-  for (;;) {
-    if (!res->left_) {
-      return res;
-    }
-    res = res->left_;
-  }
-}
-
-template <typename T>
 void list<T>::swap(list<T>& other) {
-  std::swap(end_.left_, other.end_.left_);
-  std::swap(begin_, other.begin_);
-  if (end_.left_) {
-    end_.left_->right() = &end_;
+  if (empty()) {
+    end_.left_ = &other.end_;
+    end_.right_ = &other.end_;
+  } else {
+    end_.left_->right_ = &other.end_;
+    end_.right_->left_ = &other.end_;
   }
-  if (other.end_.left_) {
-    other.end_.left_->right() = &other.end_;
+  if (other.empty()) {
+    other.end_.left_ = &end_;
+    other.end_.right_ = &end_;
+  } else {
+    other.end_.left_->right_ = &end_;
+    other.end_.right_->left_ = &end_;
   }
+  std::swap(end_, other.end_);
 }
 
 template <typename T>
@@ -442,10 +404,8 @@ T& list<T>::node::value() {
 }
 
 template <typename T>
-typename list<T>::node*& list<T>::node::right() {
-  return static_cast<data_node*>(this)->right_;
+list<T>::data_node::data_node(const T& value, node* left, node* right)
+    : value_(value) {
+  node::left_ = left;
+  node::right_ = right;
 }
-
-template <typename T>
-list<T>::data_node::data_node(const T& value, node* right)
-    : value_(value), right_(right) {}
